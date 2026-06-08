@@ -1,0 +1,25 @@
+# Bảo mật cấu hình Gurobi License và biến môi trường
+.env
+
+logs/
+
+Output/
+
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+pip-log.txt
+pip-delete-this-directory.txt
+
+gurobi.log
+
+gcp_key
+
+gcp_key.pub
+
+*.wcnf
+*.cnf
