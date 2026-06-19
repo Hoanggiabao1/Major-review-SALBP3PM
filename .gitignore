@@ -12,6 +12,9 @@ __pycache__/
 .Python
 env/
 venv/
+runlim/
+log/
+.venv/
 pip-log.txt
 pip-delete-this-directory.txt
 

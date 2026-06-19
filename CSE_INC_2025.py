@@ -32,6 +32,87 @@ best_result = None
 current_instance_id = 0
 start_time_global = 0
 
+
+def save_best_result_snapshot(result=None):
+    global best_result
+
+    if result is not None:
+        best_result = result
+
+    if not best_result:
+        return
+
+    with open(f'results_incremental_cadical_{current_instance_id}.json', 'w') as f:
+        json.dump(best_result, f)
+
+
+def upsert_result_csv(result, filename="Output/incremental_No_SM.csv"):
+    fieldnames = ["Instance", "n", "m", "c", "variables", "soft", "Constraints", "Peak", "Status", "Time"]
+    os.makedirs(os.path.dirname(filename), exist_ok=True)
+    problem_key = (
+        str(result.get("Instance", "Unknown")),
+        str(result.get("n", "")),
+        str(result.get("m", "")),
+        str(result.get("c", "")),
+    )
+
+    rows = []
+    if os.path.exists(filename):
+        with open(filename, "r", newline="") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                row_key = (
+                    str(row.get("Instance", "Unknown")),
+                    str(row.get("n", "")),
+                    str(row.get("m", "")),
+                    str(row.get("c", "")),
+                )
+                if row_key != problem_key:
+                    rows.append(row)
+
+    new_row = {
+        "Instance": result.get("Instance", "Unknown"),
+        "n": result.get("n", ""),
+        "m": result.get("m", ""),
+        "c": result.get("c", ""),
+        "variables": result.get("Variables", ""),
+        "soft": result.get("SoftClauses", ""),
+        "Constraints": result.get("HardClauses", ""),
+        "Peak": result.get("OptimalValue", ""),
+        "Status": result.get("Status", "RUNNING"),
+        "Time": result.get("Runtime", ""),
+    }
+    rows.append(new_row)
+
+    tmp_filename = f"{filename}.tmp"
+    with open(tmp_filename, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+
+    os.replace(tmp_filename, filename)
+
+
+def update_best_result(instance_name, n, m, c, variables, soft_clauses, hard_clauses, peak, status, runtime):
+    global best_result
+
+    best_result = {
+        'Instance': instance_name,
+        'n': n,
+        'm': m,
+        'c': c,
+        'Variables': variables,
+        'SoftClauses': soft_clauses,
+        'HardClauses': hard_clauses,
+        'OptimalValue': peak,
+        'Status': status,
+        'Runtime': runtime,
+    }
+
+    save_best_result_snapshot(best_result)
+    upsert_result_csv(best_result)
+
+
 # Signal handler for graceful interruption
 def handle_interrupt(signum, frame):
     print(f"\nReceived interrupt signal {signum}. Saving current best solution.")
@@ -116,6 +197,30 @@ def read_input():
                     else:
                         break
                 cnt = cnt + 1
+    for i in range(n):
+        
+        delv(i, temp)
+    print(len(adj))
+
+
+def delv(i, temp):
+    global adj, neighbors, reversed_neighbors, ran
+    if len(temp[i]) == 0:
+        return []
+    if ran[i] == 1:
+        return temp[i]
+    for j in temp[i]:
+        con = delv(j, temp)
+        if con:
+            for k in con:
+                if [i, k] not in adj:
+                    adj.append([i, k])
+                    neighbors[i][k] = 1
+                    reversed_neighbors[k][i] = 1
+                    temp[i].append(k)
+    ran[i] = 1
+    return temp[i]
+
 
 def generate_variables(n,m,c):
     x = [[j*m+i+1 for i in range (m)] for j in range(n)]
@@ -228,36 +333,28 @@ def set_var(var, name, *args):
     return var_map[key]
 
 def generate_clauses(n,m,c,time_list,adj,ip1,ip2,X,S,A):
+    # #test
+    # clauses.append([X[11 - 1][2 - 1]])
     global clauses
     global var_map
     global var_counter
-
-    #Sequencial counter for R[j][k]: R[j][k] is true if task j assigned to any machine from 0 to k
+    #staircase constraints
     for j in range(n):
-        # X[j][0] <-> R[j][0] cse-1
+        
         set_var(X[j][0], "R", j, 0)
         for k in range(1,m-1):
             if ip1[j][k] == 1:
-                # If task j cannot be assigned to machine k, then R[j][k] is equivalent to R[j][k-1]
                 set_var(get_var("R", j, k-1), "R", j, k)
             else:
-                # R[j][k-1] -> R[j][k] cse-2
                 clauses.append([-get_var("R", j, k-1), get_var("R", j, k)])
-                # X[j][k] -> R[j][k] cse-3
                 clauses.append([-X[j][k], get_var("R", j, k)])
-                # X[j][k] -> -R[j][k-1] cse-4
                 clauses.append([-X[j][k], -get_var("R", j, k-1)])
-                # R[j][k] -> X[j][k] ∨ R[j][k-1] cse-5
                 clauses.append([X[j][k], get_var("R", j, k-1), -get_var("R", j, k)])
-        
         # last machine
         if ip1[j][m-1] == 1:
-            # If task j cannot be assigned to machine m, then task j must be assigned to some machine before m-1
             clauses.append([get_var("R", j, m-2)])
         else:
-            # R[j][m-1] v X[j][m] cse-5a
             clauses.append([get_var("R", j, m-2), X[j][m-1]])
-            # X[j][m] -> -R[j][m - 1] cse-4 (last machine)
             clauses.append([-get_var("R", j, m-2), -X[j][m-1]])
         
 
@@ -265,107 +362,168 @@ def generate_clauses(n,m,c,time_list,adj,ip1,ip2,X,S,A):
         for k in range(m-1):
             if ip1[i][k+1] == 1:
                 continue
-            # precedence constraint: (i < j) X[i][k+1] -> -R[j][k] cse-6
             clauses.append([-get_var("R", j, k), -X[i][k+1]])
+    # # 1
+    # for j in range (0, n):
+    #     # if(forward[j] == 1):
+    #     #     continue
+    #     constraint = []
+    #     for k in range (0, m):
+    #         if ip1[j][k] == 1:
+    #             continue
+    #         constraint.append(X[j][k])
+    #     clauses.append(constraint)
+    # # 2 
+    # for j in range(0,n):
+    #     # if(forward[j] == 1):
+    #     #     continue
+    #     for k1 in range (0,m-1):
+    #         for k2 in range(k1+1,m):
+    #             if ip1[j][k1] == 1 or ip1[j][k2] == 1:
+    #                 continue
+    #             clauses.append([-X[j][k1], -X[j][k2]])
 
-    # Sequencial counter for T[j][t] represents "task j starts at time t or earlier"
+    # #3
+    # for a,b in adj:
+    #     for k in range (0, m-1):
+    #         for h in range(k+1, m):
+    #             if ip1[b][k] == 1 or ip1[a][h] == 1:
+    #                 continue
+    #             clauses.append([-X[b][k], -X[a][h]])
+
+
+    print("first 3 constraints (staircase):", len(clauses))
+
+    # T[j][t] represents "task j starts at time t or earlier"
     for j in range(n):
         last_t = c-time_list[j]
+        
         # Special case: Full cycle tasks (only one feasible start time: t=0)
         if last_t == 0:
             # Force the task to start at t=0 (equivalent to original constraint #4)
             clauses.append([S[j][0]])
         else:
-            # First time slot S[j][0] <-> T[j][0] cse-7
+            # First time slot
             set_var(S[j][0], "T", j, 0)
             
             # Intermediate time slots
             for t in range(1, last_t):
-                # T[j][t-1] -> T[j][t] cse-8
-                clauses.append([-get_var("T", j, t-1), get_var("T", j, t)])
-                # S[j][t] -> T[j][t] cse-9
-                clauses.append([-S[j][t], get_var("T", j, t)])
-                # S[j][t] -> -T[j][t-1] cse-10
-                clauses.append([-S[j][t], -get_var("T", j, t-1)])
-                # T[j][t] -> (T[j][t-1] ∨ S[j][t]) cse-11
-                clauses.append([S[j][t], get_var("T", j, t-1), -get_var("T", j, t)])
+                clauses.append([-get_var("T", j, t-1), get_var("T", j, t)]) # T[j][t-1] -> T[j][t]
+                clauses.append([-S[j][t], get_var("T", j, t)]) # S[j][t] -> T[j][t]
+                clauses.append([-S[j][t], -get_var("T", j, t-1)]) # S[j][t] -> ¬T[j][t-1]
+                clauses.append([S[j][t], get_var("T", j, t-1), -get_var("T", j, t)]) # T[j][t] -> (T[j][t-1] ∨ S[j][t])
             
             # Last time slot (ensures at least one start time)
-            # S[j][last_t] V T[j][last_t-1] cse-11a
             clauses.append([get_var("T", j, last_t-1), S[j][last_t]])
-            # S[j][last_t] -> T[j][last_t-1] cse-10 (last time slot)
             clauses.append([-get_var("T", j, last_t-1), -S[j][last_t]])
+    
+    # Original constraints #4 and #5 
+    # #4
+    # for j in range(n):
+    #     clauses.append([S[j][t] for t in range (c-time_list[j]+1)])
 
-    #S[j][t] -> A[j][t+l] for l in range(time_list[j]) cse-12
+    # #5
+    # for j in range(n):
+    #     for k in range(c-time_list[j]):
+    #         for h in range(k+1, c-time_list[j]+1):
+    #             clauses.append([-S[j][k], -S[j][h]])
+
+    # #6
+    # for j in range(n):
+    #     for t in range(c-time_list[j]+1,c):
+    #         if t > c- time_list[j]:
+    #             clauses.append([-S[j][t]])
+    
+    print("4 5 6 constraints (staircase):", len(clauses))
+
+    #7
+    for i in range(n-1):
+        for j in range(i+1,n):
+            for k in range (m):
+                if ip1[i][k] == 1 or ip1[j][k] == 1 :
+                    continue
+                for t in range(c):
+                    # if ip2[i][k][t] == 1 or ip2[j][k][t] == 1:
+                    #     continue
+                    clauses.append([-X[i][k], -X[j][k], -A[i][t], -A[j][t]])
+    print("7 constraints:", len(clauses))
+    #8
     for j in range(n):
         for t in range (c-time_list[j]+1):
             for l in range (time_list[j]):
-                #if(time_list[j] >= c/2 and t+l >= c-time_list[j] and t+l < time_list[j]):
-                #    continue
-                clauses.append([-S[j][t], A[j][t+l]])
+                if(time_list[j] >= c/2 and t+l >= c-time_list[j] and t+l < time_list[j]):
+                    continue
+                clauses.append([-S[j][t],A[j][t+l]])
     
-    # cse-13
+    print("8 constraints:", len(clauses))
+
+    # addtional constraints
+    # a task cant run before its active time
+
+    # for j in range(n):
+    #     for t in range (c-time_list[j]+1):
+    #         for l in range (t):
+    #             if(time_list[j] >= c/2 and l >= c-time_list[j] and l < time_list[j]):
+    #                 continue
+    #             clauses.append([-S[j][t],-A[j][l]])
+
+
+    # addtional constraints option 2
+
+
+    # for j in range(n):
+    #     for t in range (c-1): 
+    #         if(time_list[j] >= c/2 and t+1 >= c-time_list[j] and t+1 < time_list[j]):
+    #             continue
+    #         clauses.append([ -A[j][t], A[j][t+1] , S[j][max(0,t-time_list[j]+1)]])
+    
+    # #9
+
     for i,j in adj:
         for k in range(m):
             if ip1[i][k] == 1 or ip1[j][k] == 1:
                 continue
             left_bound = time_list[i] - 1
             right_bound = c - time_list[j]
-
             clauses.append([-X[i][k], -X[j][k], -get_var("T", j, left_bound)])
             for t in range (left_bound + 1, right_bound):
                 t_i = t - time_list[i]+1
-                # (X[i][k] ^ X[j][k] ^ T[j][t]) -> -S[i][t-d_i+1] cse-13
                 clauses.append([-X[i][k], -X[j][k], -get_var("T", j, t), -S[i][t_i]])
             for t in range (max(0,right_bound - time_list[i] + 1), c - time_list[i] + 1):
-                # (X[i][k] ^ X[j][k] ^ T[j][c-time_list[j]-1]) -> -S[i][t] cse-13a
-                # Như ràng buộc trên nhưng t = last_j
                 clauses.append([-X[i][k], -X[j][k], -S[i][t], -get_var("T",j,c-time_list[j]-1)])
-    
-    #(X[i][k] ^ X[j][k]) -> SM[i][j] cse-14a
-    for k in range(m):
-        for i in range(n-1):
-            for j in range(i+1,n):
-                if ip1[i][k] == 1 or ip1[j][k] == 1:
-                    continue
-                clauses.append([-X[i][k], -X[j][k], get_var("SM", i, j)])
-    
-    # (X[i][k] ^ X[j][l]) -> -SM[i][j] k khác l cse-14b
-    for i in range(n-1):
-        for j in range(i+1,n):
-            for k in range(m):
-                for l in range(m):
-                    if ip1[i][k] == 1 or ip1[j][l] == 1 or k == l:
-                        continue
-                    clauses.append([-X[i][k], -X[j][l], -get_var("SM", i, j)])
-    
-    # (SM[i][j] ^ S[i][t]) -> (T[j][t] V -T[j][t+time_list[j]-1]) cse-14c*
-    for i in range(n-1):
-        for j in range(i+1,n):
-            last_j = c - time_list[j]
-            for t in range(c - time_list[i] + 1):
-                max_t_index = last_j - 1
-                clause = [-get_var("SM", i, j), -S[i][t]]
-                t_left = t - time_list[j]
-                if 0 <= t_left <= max_t_index:
-                    clause.append(get_var("T", j, t_left))
-                t_right = t + time_list[i] - 1
-                if 0 <= t_right <= max_t_index:
-                    clause.append(-get_var("T", j, t_right))
-                clauses.append(clause)
+    # for i, j in adj:
+    #     for k in range(m):
+    #         if ip1[i][k] == 1 or ip1[j][k] == 1:
+    #             continue
+    #         for t1 in range(c - time_list[i] +1):
+    #             #t1>t2
+    #             for t2 in range(c-time_list[j]+1):
+    #                 if ip2[i][k][t1] == 1 or ip2[j][k][t2] == 1:
+    #                     continue
+    #                 if t1 > t2:
+    #                     clauses.append([-X[i][k], -X[j][k], -S[i][t1], -S[j][t2]])
+    cons = len(clauses)
+    print("Constraints:",cons)
 
-    # cse-15-16:
+    # #10
     for j in range(n):
         for k in range(m):
             if ip1[j][k] == 1:
-                # -X[j][k] if First(i) > k ∨ Last(i) < k cse-15 
                 clauses.append([-X[j][k]])
                 continue
+                # print("constraint ", j+1, k+1)
+            #11
             for t in range(c - time_list[j] +1):
                 if ip2[j][k][t] == 1:
-                    # X[j][k] -> -S[j][t] cse-16
                     clauses.append([-X[j][k], -S[j][t]])
-        
+                    # print("constraint ", j+1, k+1, t)
+    
+    #12 
+    for j in range(n):
+        if(time_list[j] >= c/2):
+            for t in range(c-time_list[j],time_list[j]):
+                clauses.append([A[j][t]])
+    print("12 constraints:", len(clauses))
     return clauses
 
 class TimeoutException(Exception):
@@ -733,147 +891,20 @@ def get_value(solution,best_value):
 
         return value, lowval, unique_constraints
 
-def generate_binary(n,m,c, X, S, A, W, UB, LB, clauses, var_counter):
-    soft_clauses = []
-    n_bit = int(math.log2(UB)) + 1
-    binU =[]
-    
-    for i in range(n_bit):
-        binU.append(var_counter + 1)
-        var_counter+=1
-        soft_clauses.append([[-var_counter], 2**i])
-    var = var_counter + 1
-    variables = []
-    weight = []
-    for i in range(n_bit):
-        variables.append(binU[i])
-        weight.append(2**i)
-    
-    pb_clauses_lb = PBEnc.geq(lits=variables, weights=weight, bound=LB, top_id=var, encoding=EncType.binmerge)
-
-    if pb_clauses_lb.nv > var:
-            var = pb_clauses_lb.nv + 1
-    
-    for clause in pb_clauses_lb.clauses:
-        clauses.append(clause)
-
-    for t in range(c):
-        variables = []
-        weight = []
-        for i in range(n):
-            variables.append(A[i][t])
-            weight.append(W[i])
-        
-        for i in range(n_bit):
-            variables.append(-binU[i])
-            weight.append(2**i)
-
-        upper_bound = sum(2**j for j in range(n_bit))
-        # Create PB constraint: sum(power_terms) - sum(binary_terms) <= 0
-        # This is equivalent to: sum(power_terms) <= sum(binary_terms)
-        pb_clauses = PBEnc.leq(lits=variables, weights=weight, bound=upper_bound,
-                                 top_id=var, encoding=EncType.binmerge)
-            
-        # Update variable counter
-        if pb_clauses.nv > var:
-            var = pb_clauses.nv + 1
-            
-        # Add the encoded clauses to WCNF
-        for clause in pb_clauses.clauses:
-            clauses.append(clause)
-
-    return clauses, soft_clauses, var
-
-def write_wcnf_with_h_prefix(clauses, soft_clauses, var, filename = "problem_eval_E.wcnf"):
-    with open(filename, 'w') as f:
-        # Calculate statistics
-        total_clauses = len(clauses) + len(soft_clauses)
-        top_weight = max(soft_clauses[i][1] for i in range(len(soft_clauses))) + 1
-            
-        f.write(f"p wcnf {var} {total_clauses} {top_weight}\n")    
-        # Write hard constraints with 'h' prefix
-        for clause in clauses:
-            f.write(str(top_weight) + " ")
-            f.write(" ".join(map(str, clause)))
-            f.write(" 0\n")
-            
-        # Write soft constraints with their weights
-        for item in soft_clauses:
-            clause = item[0][0]
-            weight = item[1]        
-            f.write(f"{weight} ")
-            f.write(" " + str(clause))
-            f.write(" 0\n")
-
-def parse_assignment_line(var_string):
-    var_string = var_string.strip()
-    if not var_string:
-        return []
-    if all(c in '01' for c in var_string):
-        assignment = []
-        for i, bit in enumerate(var_string):
-            if bit == '1':
-                assignment.append(i + 1)
-            else:
-                assignment.append(-(i + 1))
-        return assignment
-    else:
-        try:
-            return [int(x) for x in var_string.split() if x != '0']
-        except ValueError:
-            assignment = []
-            for i, bit in enumerate(var_string):
-                if bit == '1':
-                    assignment.append(i + 1)
-            return assignment
-
-def solve_maxsat():
-    try:
-        proc = subprocess.Popen(
-            ["./EvalMaxSAT_bin", "problem_eval_E.wcnf"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            bufsize=1
-        )
-        try:
-            stdout, stderr = proc.communicate(timeout=3600)
-            raw_output = stdout
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            stdout, stderr = proc.communicate()
-            raw_output = stdout
-            print("\nOutput before timeout:", raw_output)
-            if stderr:
-                print("Stderr:", stderr)
-    except Exception as e:
-        print(f"Error running solver: {e}")
-        return None
-    
-    if not raw_output:
-        return None
-
-    best_assignment = None
-    lines = raw_output.strip().split('\n')
-    for line in reversed(lines):
-        if line.startswith('v '):
-            var_string = line[2:]
-            best_assignment = parse_assignment_line(var_string)
-            break
-
-    return best_assignment
-
 def optimal(X,S,A,n,m,c,sol,solbb,start_time):
     global filename  # Access the global filename variable
+    instance_name = filename.split(".")[0] if filename else "Unknown"
     
     ip1,ip2 = preprocess(n,m,c,time_list,adj)
 
     # print(ip2[])
     clauses = generate_clauses(n,m,c,time_list,adj,ip1,ip2,X,S,A)
 
+    solver = Cadical195()
     test_solver = Cadical195()
 
     for clause in clauses:
+        solver.add_clause(clause)
         test_solver.add_clause(clause)
 
     # Check timeout before initial solve
@@ -884,7 +915,7 @@ def optimal(X,S,A,n,m,c,sol,solbb,start_time):
         return 0, var_counter, clauses, [], "TIMEOUT"
 
     # Use timeout for initial solve
-    model = solve(test_solver)
+    model = solve(solver)
     if model is None:
         print("Initial solve timed out or no solution")
         return 0, var_counter, clauses, [], "TIMEOUT"
@@ -894,6 +925,7 @@ def optimal(X,S,A,n,m,c,sol,solbb,start_time):
     result = get_value(model, infinity)
 
     bestValue, lowval, station = result
+    update_best_result(instance_name, n, m, c, var_counter, 0, len(clauses), bestValue, "RUNNING", time.time() - start_time)
 
     print(bestValue)
 
@@ -908,49 +940,157 @@ def optimal(X,S,A,n,m,c,sol,solbb,start_time):
         if current_bestValue < bestValue:
             bestValue = current_bestValue
             bestSolution = model
+            update_best_result(instance_name, n, m, c, var_counter, 0, len(clauses), bestValue, "RUNNING", time.time() - start_time)
         for t in range(c):
             for stations in station:
                 test_solver.add_clause([-A[j-1][t] for j in stations])
         print(result[0], end=" ")
 
+
     lowval = max(W)
     print("initial value:",bestValue)
     print("initial station:",station)
     start_var = var_counter
-    clauses , soft_clauses, var= generate_binary(n,m,c, X, S, A, W, bestValue, lowval, clauses, start_var)
-    write_wcnf_with_h_prefix(clauses, soft_clauses, var, filename="problem_eval_E.wcnf")
-    res = solve_maxsat()
-    if res is None:
-        print("no solution")
-        return bestValue, var_counter, clauses, [], "TIMEOUT"
-    model = res
-    result = get_value(model, bestValue)
-    current_bestValue, lowval, station = result
-    if current_bestValue < bestValue:
-        bestValue = current_bestValue
+    clauses , soft_clauses, var, U, solver1 = generate_inagural(n,m,c, X, S, A, W, bestValue, lowval, clauses, start_var, solver)
+    # Using incremental SAT solving
+    pre_idx = bestValue-lowval-1
+    while (True):
+        # Check timeout
+        current_time = time.time()
+        if current_time - start_time >= 3600:
+            print("Time limit exceeded.")
+            # Save solution before returning
+            instance_name = filename.split(".")[0] if filename else "Unknown"
+            update_best_result(instance_name, n, m, c, var_counter, 0, len(clauses), bestValue, "TIMEOUT", time.time() - start_time)
+            save_solution_to_log(bestSolution, bestValue, instance_name, "Time_Limit_Exceeded")
+            return bestValue, var, clauses, soft_clauses, "Time Limit Exceeded"
+            
+        remaining_time = 3600 - (current_time - start_time)
+        if remaining_time <= 1:  # Need at least 1 second
+            print("Time limit exceeded - insufficient time remaining")
+            # Save solution before returning
+            instance_name = filename.split(".")[0] if filename else "Unknown"
+            update_best_result(instance_name, n, m, c, var_counter, 0, len(clauses), bestValue, "TIMEOUT", time.time() - start_time)
+            save_solution_to_log(bestSolution, bestValue, instance_name, "Time_Limit_Exceeded")
+            return bestValue, var, clauses, soft_clauses, "Time Limit Exceeded"
+            
+        # Use timeout for each iterative solve
+        # model = solve_with_timeout(solver1, min(int(remaining_time), 3600))  # Max 3600s per iteration
+        model = solve(solver1)
+        if model is None:
+            print("No solution found maxsat or timeout.")
+            # Save solution before returning
+            instance_name = filename.split(".")[0] if filename else "Unknown"
+            update_best_result(instance_name, n, m, c, var_counter, len(soft_clauses), len(clauses), bestValue, "OPTIMAL", time.time() - start_time)
+            save_solution_to_log(bestSolution, bestValue, instance_name, "Optimal")
+            return bestValue, var, clauses, soft_clauses, "Optimal"
+            
+        # Update best solution when we find a better one
         bestSolution = model
-    print("final value:",bestValue)
-    print("final station:",station)
-    return bestValue, var_counter, clauses, bestSolution, "Optimal"
-
-def write_fancy_table_to_csv(ins, n, m, c, val, s_cons, h_cons, peak, status, time_elapsed, filename="CSE_Eval_Normal_E.csv"):
+        ansmap, bestValue = get_value2(n, m, c, model, W)
+        print("best value:", bestValue, end="\r")
+        update_best_result(instance_name, n, m, c, var_counter, len(soft_clauses), len(clauses), bestValue, "RUNNING", time.time() - start_time)
+        idx = bestValue - lowval - 1
+        solver1.add_clause([-U[idx-1]])
+        # for i in range (idx, pre_idx):
+        #     if pre_idx > 0:
+        #         solver1.add_clause([-U[i]])
+        # pre_idx = idx
+        
+def get_value2(n, m, c, model, W, UB = 0):
+    ans_map = [[0 for _ in range(c)] for _ in range(m + 1)]
+    start_B = n*m
+    start_A = start_B + n*c
+    start_U = start_A + n*c
     
-    # Write to CSV
-    os.makedirs("Output", exist_ok=True)
-    with open("Output/" + filename, "a", newline='') as f:
-        writer = csv.writer(f)
-        row = []
-        row.append(ins)
-        row.append(str(n))
-        row.append(str(m))
-        row.append(str(c))
-        row.append(str(val))
-        row.append(str(s_cons))
-        row.append(str(h_cons))
-        row.append(str(peak))
-        row.append(status)
-        row.append(str(time_elapsed))
-        writer.writerow(row)
+    for i in range(m):
+        for j in range(c):
+            for k in range(n):
+                if ((model[k*m  + i] > 0) and model[start_B + k*c + j] > 0):
+                    ans_map[i][j] = W[k]
+    
+    for i in range(c):
+        ans_map[m][i] = sum(ans_map[j][i] for j in range(m))
+    peak = max(ans_map[m][i] for i in range(c))
+    return ans_map, peak
+
+    
+def get_value2(n, m, c, model, W, UB = 0):
+    ans_map = [[0 for _ in range(c)] for _ in range(m + 1)]
+    start_B = n*m
+    start_A = start_B + n*c
+    start_U = start_A + n*c
+    
+    for i in range(m):
+        for j in range(c):
+            for k in range(n):
+                if ((model[k*m  + i] > 0) and model[start_B + k*c + j] > 0):
+                    ans_map[i][j] = W[k]
+    
+    for i in range(c):
+        ans_map[m][i] = sum(ans_map[j][i] for j in range(m))
+    peak = max(ans_map[m][i] for i in range(c))
+    return ans_map, peak
+
+
+def generate_inagural(n,m,c, X, S, A, W, UB, LB, clauses, var_counter, solver):
+    soft_clauses = []
+    U = []
+    for i in range(LB + 1, UB):
+        U.append(var_counter + 1)
+        var_counter += 1
+        soft_clauses.append([[-var_counter], 1])
+    
+    for i in range(1, len(U)):
+        clauses.append([-U[i], U[i-1]])
+        solver.add_clause([-U[i], U[i-1]])
+    
+    var = var_counter + 1
+    for t in range(c):
+        variables = []
+        weight = []
+        for i in range(len(U)):
+            variables.append(-U[i])
+            weight.append(1)
+        for i in range(n):
+            variables.append(A[i][t])
+            weight.append(W[i])
+        pb_clauses = PBEnc.leq( lits=variables, weights=weight, 
+                                bound=UB, 
+                                top_id=var, encoding=EncType.binmerge)
+        # Update variable counter for any new variables created by PBEnc
+        if pb_clauses.nv > var:
+            var = pb_clauses.nv + 1
+            
+        # Add the encoded clauses to WCNF
+        for clause in pb_clauses.clauses:
+            clauses.append(clause)
+            solver.add_clause(clause)
+            
+
+    return clauses, soft_clauses, var, U, solver
+def write_fancy_table_to_csv(ins, n, m, c, val, s_cons, h_cons, peak, status, time_elapsed, filename="incremental_No_SM.csv"):
+    global best_result
+    
+    # Create result dictionary
+    result = {
+        'Instance': ins,
+        'n': n,
+        'm': m,
+        'c': c,
+        'Variables': val,
+        'SoftClauses': s_cons,
+        'HardClauses': h_cons,
+        'OptimalValue': peak,
+        'Status': status,
+        'Runtime': time_elapsed
+    }
+    
+    # Update best result
+    best_result = result.copy()
+    
+    # Write or replace row in CSV
+    upsert_result_csv(result, filename="Output/" + filename)
 
 file_name = [
     ["MERTENS", 6, 6],      #0
@@ -1217,7 +1357,7 @@ def main():
     
     start_time_global = time.time()
     # Run all 89 instances (change to 39 for easy instances only)
-    for idx in range(43, 44):
+    for idx in range(43, len(file_name1)):
         reset(idx)
         read_input()
         X, A, S = generate_variables(n,m,c)
@@ -1234,4 +1374,129 @@ def main():
         end_time = time.time()
         write_fancy_table_to_csv(filename.split(".")[0], n, m, c, vari, len(soft_clauses), len(clauses), solval, status, end_time - start_time)
 
-main()
+if __name__ == "__main__":
+    # Help message
+    if len(sys.argv) > 1 and sys.argv[1] in ['-h', '--help', 'help']:
+        print("Usage:")
+        print("  python3 incremental_binary_merger.py              # Run all instances with runlim")
+        print("  python3 incremental_binary_merger.py <id>         # Run single instance by ID")
+        print("  python3 incremental_binary_merger.py easy         # Run only easy instances (0-38)")
+        print("  python3 incremental_binary_merger.py hard         # Run only hard instances (39+)")
+        print("  python3 incremental_binary_merger.py all          # Run all instances")
+        print("")
+        print(f"Available instances: {len(file_name1)} total")
+        print("Easy instances: 0-38 (39 instances)")
+        print("Hard instances: 39+ (remaining instances)")
+        print("")
+        print("Files created:")
+        print("  Output/Incremental_cadical_all.csv   # CSV results")
+        print("  Output/Incremental_cadical_all.xlsx  # Excel results")
+        print("  results_incremental_cadical_<id>.json # Individual results")
+        print("")
+        print("Optional timeout file: incremental_cadical_timeout.txt")
+        print("  (List instance names to run only those instances)")
+        sys.exit(0)
+    
+    # Check for special arguments
+    if len(sys.argv) > 1 and sys.argv[1] in ['easy', 'hard', 'all']:
+        difficulty = sys.argv[1]
+        if difficulty == 'easy':
+            # Only run easy instances (first 39)
+            instances_to_run = file_name1[:39] if len(file_name1) >= 39 else file_name1
+            print(f"Running EASY instances only: {len(instances_to_run)} instances")
+        elif difficulty == 'hard':
+            # Only run hard instances (40-89)
+            instances_to_run = file_name1[39:] if len(file_name1) > 39 else []
+            print(f"Running HARD instances only: {len(instances_to_run)} instances")
+        else:  # 'all'
+            instances_to_run = file_name1
+            print(f"Running ALL instances: {len(instances_to_run)} instances")
+        
+        # Run selected instances with controller mode
+        file_name1 = instances_to_run
+        sys.argv = [sys.argv[0]]  # Reset argv to trigger controller mode
+    
+    # Controller mode - run all instances with runlim
+    if len(sys.argv) == 1:
+        # Create Output folder if it doesn't exist
+        if not os.path.exists('Output'):
+            os.makedirs('Output')
+        
+        # Read existing Excel file to check completed instances
+        excel_file = 'Output/incremental_No_SM.xlsx'
+        csv_file = 'Output/incremental_No_SM.csv'
+        
+        completed_instances = []
+
+        
+        # Set timeout (1 hour = 3600s)
+        TIMEOUT = 3601
+        
+        print(f"Running {len(file_name1)} instances with {TIMEOUT}s timeout each")
+        
+        # Run all instances with runlim
+        # Here
+        for instance_id in range(11, 12):
+            instance_name = file_name1[instance_id][0]
+            
+            print(f"\n{'=' * 50}")
+            print(f"Running instance {instance_id}: {instance_name} (m={file_name1[instance_id][1]}, c={file_name1[instance_id][2]})")
+            print(f"{'=' * 50}")
+            
+            # Clean up previous result files
+            for temp_file in [f'results_incremental_cadical_{instance_id}.json', 
+                              f'checkpoint_incremental_cadical_{instance_id}.json']:
+                if os.path.exists(temp_file):
+                    os.remove(temp_file)
+            
+            # Run instance with timeout
+            command = f"./runlim/runlim -r {TIMEOUT} {sys.executable} CSE_INC_2025.py {instance_id}"
+            
+            try:
+                process = subprocess.Popen(command, shell=True)
+                process.wait()
+                time.sleep(1)
+                
+                # Check results
+                result = None
+                
+                if os.path.exists(f'results_incremental_cadical_{instance_id}.json'):
+                    with open(f'results_incremental_cadical_{instance_id}.json', 'r') as f:
+                        result = json.load(f)
+                
+                # Process results
+                if result:
+                    print(f"Instance {instance_name} - Status: {result['Status']}")
+                    print(f"Optimal Value: {result['OptimalValue']}, Runtime: {result['Runtime']}")
+                    
+                    # Convert JSON to Excel format
+                    if os.path.exists(excel_file):
+                        try:
+                            existing_df = pd.read_excel(excel_file)
+                            result_df = pd.DataFrame([result])
+                            existing_df = pd.concat([existing_df, result_df], ignore_index=True)
+                        except:
+                            existing_df = pd.DataFrame([result])
+                    else:
+                        existing_df = pd.DataFrame([result])
+                    
+                    existing_df.to_excel(excel_file, index=False)
+                    print(f"Results saved to {excel_file}")
+                else:
+                    print(f"No results found for instance {instance_name}")
+                    
+            except Exception as e:
+                print(f"Error running instance {instance_name}: {str(e)}")
+            
+            # Clean up temp files
+            for temp_file in [f'results_incremental_cadical_{instance_id}.json', 
+                              f'checkpoint_incremental_cadical_{instance_id}.json']:
+                if os.path.exists(temp_file):
+                    os.remove(temp_file)
+        
+        print(f"\nAll instances completed. Results saved to {excel_file}")
+    
+    # Single instance mode
+    else:
+        instance_id = int(sys.argv[1])
+        run_single_instance(instance_id)

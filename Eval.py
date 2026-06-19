@@ -852,19 +852,28 @@ def parse_assignment_line(var_string):
             return assignment
 
 def solve_maxsat():
-    raw_output = ""
     try:
-        result = subprocess.run(
+        proc = subprocess.Popen(
             ["./EvalMaxSAT_bin", "problem_eval.wcnf"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True, 
-            timeout=3600
+            text=True,
+            bufsize=1  # line buffering - flush mỗi dòng
         )
-        raw_output = result.stdout
-    except subprocess.TimeoutExpired as e:
-        raw_output = e.stdout if e.stdout else ""
-
+        try:
+            stdout, stderr = proc.communicate(timeout=3600)
+            raw_output = stdout
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            stdout, stderr = proc.communicate()
+            raw_output = stdout
+            print("\nOutput before timeout:", raw_output)
+            if stderr:
+                print("Stderr:", stderr)
+    except Exception as e:
+        print(f"Error running solver: {e}")
+        return None
+    
     if not raw_output:
         return None
 
@@ -1232,7 +1241,7 @@ def main():
     
     start_time_global = time.time()
     # Run all 89 instances (change to 39 for easy instances only)
-    for idx in range(0, 89):
+    for idx in range(43, 44):
         reset(idx)
         read_input()
         X, A, S = generate_variables(n,m,c)
