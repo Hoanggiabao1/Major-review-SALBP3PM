@@ -9,6 +9,7 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+*.json
 .Python
 env/
 venv/
@@ -24,5 +25,8 @@ gcp_key
 
 gcp_key.pub
 
+*.tar.gz
+
 *.wcnf
 *.cnf
+runlim_log.txt

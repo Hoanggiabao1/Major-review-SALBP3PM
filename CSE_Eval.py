@@ -889,7 +889,7 @@ def solve_maxsat():
                                 ["./EvalMaxSAT_bin", "problem_cse_eval.wcnf"],
                                 stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE,
-                                text=True, timeout=3600
+                                text=True, timeout=7200
                                 )
 
         # print(f"Solver output:\n{result.stdout}")
@@ -941,7 +941,7 @@ def optimal(X,S,A,n,m,c,sol,solbb,start_time):
 
     # Check timeout before initial solve
     current_time = time.time()
-    remaining_time = 3600 - (current_time - start_time)
+    remaining_time = 7200 - (current_time - start_time)
     if remaining_time <= 0:
         print("Instance timeout before initial solve")
         return 0, var_counter, clauses, [], "TIMEOUT"
@@ -1241,6 +1241,14 @@ file_name1 = [
     # Hard families total count: 50
 
     # Total: 89
+]
+
+file_name1 = [
+    ["HESKIA", 4, 324],     
+    ["BUXEY", 10, 36],      
+    ["GUNTHER", 8, 69],    
+    ["GUNTHER", 7, 81],
+    ["WARNECKE", 27, 60]
 ]
 
 # Override instances if timeout file exists

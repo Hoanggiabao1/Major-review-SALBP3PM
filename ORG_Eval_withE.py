@@ -413,7 +413,6 @@ def write_wcnf_with_h_prefix(wcnf, var, filename):
                 continue
 
 def solve_new(wcnf, var):
-    return None
     wcnf_filename = "problem_eval_E.wcnf"
     write_wcnf_with_h_prefix(wcnf, var, wcnf_filename)
     # Use external MaxSAT solver (tt-open-wbo-inc)
@@ -423,7 +422,7 @@ def solve_new(wcnf, var):
                                 ['./EvalMaxSAT_bin', wcnf_filename],
                                 stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE,
-                                text=True, timeout=3600
+                                text=True, timeout=7200
                                 )
 
         # print(f"Solver output:\n{result.stdout}")
@@ -627,9 +626,16 @@ file_name1 = [
     # Total: 89
 ]
 
-for i in range(74, 78):
-    name = file_name1[i][0]
-    m = file_name1[i][1]
-    c = file_name1[i][2]
+file_name2 = [
+    ["HESKIA", 4, 324],     
+    ["BUXEY", 10, 36],      
+    ["GUNTHER", 8, 69],    
+    ["GUNTHER", 7, 81],
+    #["WARNECKE", 27, 60]
+]
+for i in range(len(file_name2)):
+    name = file_name2[i][0]
+    m = file_name2[i][1]
+    c = file_name2[i][2]
     n, W, precedence_relations, Ex_Time = input_file(name)
-    solve_MaxSat_SAML3P(n, m, c, Ex_Time, W, precedence_relations, name, file_name1[i])
+    solve_MaxSat_SAML3P(n, m, c, Ex_Time, W, precedence_relations, name, file_name2[i])

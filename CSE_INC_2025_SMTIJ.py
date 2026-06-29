@@ -931,7 +931,7 @@ def optimal(X,S,A,n,m,c,sol,solbb,start_time):
 
     # Check timeout before initial solve
     current_time = time.time()
-    remaining_time = 3600 - (current_time - start_time)
+    remaining_time = 7200 - (current_time - start_time)
     if remaining_time <= 0:
         print("Instance timeout before initial solve")
         return 0, var_counter, clauses, [], "TIMEOUT"
@@ -979,7 +979,7 @@ def optimal(X,S,A,n,m,c,sol,solbb,start_time):
     while (True):
         # Check timeout
         current_time = time.time()
-        if current_time - start_time >= 3600:
+        if current_time - start_time >= 7200:
             print("Time limit exceeded.")
             # Save solution before returning
             instance_name = filename.split(".")[0] if filename else "Unknown"
@@ -987,7 +987,7 @@ def optimal(X,S,A,n,m,c,sol,solbb,start_time):
             save_solution_to_log(bestSolution, bestValue, instance_name, "Time_Limit_Exceeded")
             return bestValue, var, clauses, soft_clauses, "Time Limit Exceeded"
             
-        remaining_time = 3600 - (current_time - start_time)
+        remaining_time = 7200 - (current_time - start_time)
         if remaining_time <= 1:  # Need at least 1 second
             print("Time limit exceeded - insufficient time remaining")
             # Save solution before returning
@@ -1445,20 +1445,20 @@ if __name__ == "__main__":
             os.makedirs('Output')
         
         # Read existing Excel file to check completed instances
-        excel_file = 'Output/incremental_No_SM.xlsx'
-        csv_file = 'Output/incremental_No_SM.csv'
+        excel_file = 'Output/incremental_SMTIJ.xlsx'
+        csv_file = 'Output/incremental_SMTIJ.csv'
         
         completed_instances = []
 
         
         # Set timeout (1 hour = 3600s)
-        TIMEOUT = 3601
+        TIMEOUT = 7200
         
         print(f"Running {len(file_name1)} instances with {TIMEOUT}s timeout each")
         
         # Run all instances with runlim
         # Here
-        for instance_id in range(11, 12):
+        for instance_id in range(38, 39):
             instance_name = file_name1[instance_id][0]
             
             print(f"\n{'=' * 50}")
