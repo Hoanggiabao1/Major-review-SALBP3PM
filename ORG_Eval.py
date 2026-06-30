@@ -600,7 +600,16 @@ file_name1 = [
     # Total: 89
 ]
 
-for i in range(63, len(file_name1)):
+file_name1 = [
+    ["HESKIA", 4, 324],     
+    ["BUXEY", 10, 36],      
+    ["GUNTHER", 8, 69],    
+    ["GUNTHER", 7, 81],
+    ["WARNECKE", 27, 60],
+    ["JAESCHKE", 7, 7]    
+]
+
+for i in range(5, len(file_name1)):
     name = file_name1[i][0]
     m = file_name1[i][1]
     c = file_name1[i][2]

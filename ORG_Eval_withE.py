@@ -631,9 +631,11 @@ file_name2 = [
     ["BUXEY", 10, 36],      
     ["GUNTHER", 8, 69],    
     ["GUNTHER", 7, 81],
-    #["WARNECKE", 27, 60]
+    ["WARNECKE", 27, 60],
+    ["JAESCHKE", 7, 7]    
 ]
-for i in range(len(file_name2)):
+
+for i in range(5, len(file_name2)):
     name = file_name2[i][0]
     m = file_name2[i][1]
     c = file_name2[i][2]

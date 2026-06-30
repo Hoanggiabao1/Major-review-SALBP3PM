@@ -1243,14 +1243,6 @@ file_name1 = [
     # Total: 89
 ]
 
-file_name1 = [
-    ["HESKIA", 4, 324],     
-    ["BUXEY", 10, 36],      
-    ["GUNTHER", 8, 69],    
-    ["GUNTHER", 7, 81],
-    ["WARNECKE", 27, 60]
-]
-
 # Override instances if timeout file exists
 if os.path.exists("incremental_cadical_timeout.txt"):
     with open("incremental_cadical_timeout.txt", "r") as f:
@@ -1323,7 +1315,7 @@ def main():
     
     start_time_global = time.time()
     # Run all 89 instances (change to 39 for easy instances only)
-    for idx in range(0, 89):
+    for idx in range(5,6):
         reset(idx)
         read_input()
         X, A, S = generate_variables(n,m,c)
